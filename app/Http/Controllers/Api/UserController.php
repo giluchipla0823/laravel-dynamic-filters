@@ -37,7 +37,9 @@ class UserController extends Controller
 
         /* @var Model $model */
         $model = User::getModel();
+
         $table = $model->getTable();
+
         $columns = Schema::getColumnListing($table);
 
         $builder = $model->newQuery();
