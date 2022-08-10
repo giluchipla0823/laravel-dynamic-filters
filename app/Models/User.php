@@ -43,6 +43,8 @@ class User extends Authenticatable
         'email_verified_at' => 'datetime',
     ];
 
+    public static $allowFilters = ['id', 'name', 'email', 'email_verified_at'];
+
     public function posts(): HasMany
     {
         return $this->hasMany(Post::class);

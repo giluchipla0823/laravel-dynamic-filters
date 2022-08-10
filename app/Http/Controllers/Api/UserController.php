@@ -8,6 +8,7 @@ use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
@@ -33,9 +34,7 @@ class UserController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $allowFilters = ['id', 'name', 'email', 'email_verified_at', 'posts.user.name'];
-
-        /* @var Model $model */
+        /* @var User $model */
         $model = User::getModel();
 
         $table = $model->getTable();
@@ -50,38 +49,12 @@ class UserController extends Controller
             $type = $data['type'] ?? 'LIKE';
 
             if (count($keys) === 1) {
-                if (!in_array(current($keys), $allowFilters)) {
+                if (!in_array(current($keys), $model::$allowFilters)) {
                     continue;
                 }
 
-                $value = $this->parseValue($table, $field, $type, $value);
-
-                switch ($type) {
-                    case self::FILTER_TYPE_LIKE:
-                    case self::FILTER_TYPE_EQUAL:
-                    case self::FILTER_TYPE_NOT_EQUAL:
-                        $operator = $this->getOperator($type);
-
-                        $builder->where($field, $operator, $value);
-                        break;
-
-                    case self::FILTER_TYPE_CONTAIN:
-                        $builder->whereIn($field, $value);
-                        break;
-
-                    case self::FILTER_TYPE_NOT_CONTAIN:
-                        $builder->whereNotIn($field, $value);
-                        break;
-
-                    case self::FILTER_TYPE_BETWEEN:
-                        $builder->whereBetween($field, $value);
-                        break;
-                    default:
-
-                        break;
-                }
+                $this->addFiltersToQuery($builder, $table, $field, $type, $value);
             } else {
-
                 $lastKey = array_key_last($keys);
                 $lastField = $keys[$lastKey];
 
@@ -93,47 +66,28 @@ class UserController extends Controller
                     $model = $query->getModel();
                     $table = $model->getTable();
 
-                    $value = $this->parseValue($table, $lastField, $type, $value);
-
-                    $query->where($lastField, 'LIKE', $value);
+                    if (in_array($lastField, $model::$allowFilters)) {
+                        $this->addFiltersToQuery($query, $table, $lastField, $type, $value);
+                    }
                 });
             }
         }
 
-//        foreach ($request->all() as $field => $value) {
-//            $keys = explode('_', $field);
-//
-//            if (count($keys) === 1) {
-//                if (!in_array(current($keys), $allowFilters)) {
-//                    continue;
-//                }
-//
-//                $builder->where($field, 'LIKE', "%$value%");
-//            } else {
-//                if (!in_array(implode('.', $keys), $allowFilters)) {
-//                    continue;
-//                }
-//
-//                $lastKey = array_key_last($keys);
-//                $lastField = $keys[$lastKey];
-//
-//                unset($keys[$lastKey]);
-//
-//                $relation = implode('.', $keys);
-//
-//                $builder->whereHas($relation, function($query) use ($lastField, $value) {
-//                    $query->where($lastField, 'LIKE', "%$value%");
-//                });
-//            }
-//        }
-
-        // dd($builder->toSql());
-
+        $cache = false;
         $users = $builder->get();
 
+//        $cache = Cache::has('users');
+//
+//        $users = Cache::remember('users', 60, function () {
+//            return User::all();
+//        });
 
 
-        return response()->json($users);
+
+        return response()->json([
+            'cache' => $cache,
+            'users' => $users
+        ]);
     }
 
     /**
@@ -198,5 +152,34 @@ class UserController extends Controller
             self::FILTER_TYPE_LESS_THAN => '<',
             self::FILTER_TYPE_LESS_THAN_OR_EQUAL => '<=',
         };
+    }
+
+    private function addFiltersToQuery($builder, string $table, string $field, string $type, mixed $value) {
+        $value = $this->parseValue($table, $field, $type, $value);
+
+        switch ($type) {
+            case self::FILTER_TYPE_LIKE:
+            case self::FILTER_TYPE_EQUAL:
+            case self::FILTER_TYPE_NOT_EQUAL:
+                $operator = $this->getOperator($type);
+
+                $builder->where($field, $operator, $value);
+                break;
+
+            case self::FILTER_TYPE_CONTAIN:
+                $builder->whereIn($field, $value);
+                break;
+
+            case self::FILTER_TYPE_NOT_CONTAIN:
+                $builder->whereNotIn($field, $value);
+                break;
+
+            case self::FILTER_TYPE_BETWEEN:
+                $builder->whereBetween($field, $value);
+                break;
+            default:
+
+                break;
+        }
     }
 }
